@@ -12,8 +12,8 @@ This is a simple Discord bot that replies to user messages with a greeting.
 1. Clone this repository to your local machine.
 2. Install the dependencies by running `npm install`.
 3. Create a new Discord application and add a bot to it.
-4. Copy the bot token and add it to the `client.login()` method in `index.js`.
-5. Update the `voiceChannel.id` and `channel.id` variables in `index.js` with the IDs of your voice channel and the channel where you want to send the work times message.
+4. Copy the bot token and add it to the `client.login()` method in `app.js`.
+5. Update the `voiceChannel.id` and `channel.id` variables in `app.js` with the IDs of your voice channel and the channel where you want to send the work times message.
 6. Run the bot with `node app.js`.
 
 ## Usage
