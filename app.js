@@ -1,4 +1,5 @@
 const Discord = require("discord.js");
+const fs = require('fs');
 const client = new Discord.Client({
   intents: [
     Discord.Intents.FLAGS.GUILDS,
@@ -8,7 +9,23 @@ const client = new Discord.Client({
 });
 const startTime = new Date();
 const trackedChannels = new Set();
-const workTimes = {};
+let workTimes = {};
+
+function loadData() {
+  try {
+    const data = fs.readFileSync('./worktimes.json');
+    workTimes = JSON.parse(data);
+  } catch (err) {
+    console.error(err);
+  }
+}
+function saveData() {
+  fs.writeFile('./worktimes.json', JSON.stringify(workTimes), err => {
+    if (err) {
+      console.error(err);
+    }
+  });
+}
 
 function formatDuration(duration) {
   const hours = Math.floor(duration / 3600);
@@ -20,58 +37,69 @@ function formatDuration(duration) {
 
 // When the bot starts up, log in to Discord
 client.login(
-  "MTA4NDYwNjEwNDU1NTc2OTg1Nw.GrUfLs.gdMTcVkCJri29tNLvjNDBuHtyBm2Yz9Obal2FM"
+  "MTA4NDYwNjEwNDU1NTc2OTg1Nw.GlXNFk.aOuO1k3hz5D_MpPkeUWJRItB5h2_lFK7qQJ3T0"
 );
 
 // When the bot is ready, log a message to the console
 client.on('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
-  }
-);
-
-// When a user joins a voice channel, start tracking their time in that channel
+  
+  // Load the workTimes object from the file
+  fs.readFile('./worktimes.json', 'utf8', (err, data) => {
+    
+    if (err) {
+      console.error(err);
+      
+    } else {
+      workTimes = JSON.parse(data);
+      
+    }
+  });
+  
+});
 client.on("voiceStateUpdate", (oldState, newState) => {
   const user = newState.member;
-  const voiceChannel = newState.channel;
-  if (voiceChannel && voiceChannel.id === "1084622657498124329") {
+  const voiceChannel = newState.channel || oldState.channel;
+  if (!voiceChannel || voiceChannel.id !== "1084622657498124329") {
+    return;
+  }
+  
+  const muted = user.voice.selfMute || user.voice.serverMute;
+  const deafened = user.voice.selfDeaf || user.voice.serverDeaf;
+  const status = muted || deafened ? "muted/deafened" : "unmuted/undeafened";
+  
+  if (oldState.channelId !== voiceChannel.id && newState.channelId === voiceChannel.id) {
+    // User joined the working room
     trackedChannels.add(voiceChannel.id);
     if (!workTimes[user.id]) {
       workTimes[user.id] = { total: 0, today: 0 };
     }
     workTimes[user.id].startTime = Date.now();
-    console.log(
-      `${user.displayName} joined ${voiceChannel.name} at ${new Date()}`
-    );
-  } else if (trackedChannels.has(oldState.channel?.id)) {
-    trackedChannels.delete(oldState.channel.id);
-    const workTime = Date.now() - workTimes[user.id].startTime;
-    workTimes[user.id].total += workTime / 1000;
-    workTimes[user.id].today += workTime / 1000;
-    workTimes[user.id].startTime = null;
-    console.log(
-      `${user.displayName} left ${oldState.channel.name} at ${new Date()}`
-    );
-  }
-});
-
-// When a user leaves a voice channel, stop tracking their time and update their work time
-client.on("voiceStateUpdate", (oldState, newState) => {
-  const user = newState.member;
-  const voiceChannel = oldState.channel;
-  if (voiceChannel && trackedChannels.has(voiceChannel.id)) {
+    console.log(`${user.displayName} joined ${voiceChannel.name} at ${new Date()}`);
+  } else if (oldState.channelId === voiceChannel.id && newState.channelId !== voiceChannel.id) {
+    // User left the working room
     trackedChannels.delete(voiceChannel.id);
     const workTime = Date.now() - workTimes[user.id].startTime;
     workTimes[user.id].total += workTime / 1000;
     workTimes[user.id].today += workTime / 1000;
     workTimes[user.id].startTime = null;
+    console.log(`${user.displayName} left ${voiceChannel.name} at ${new Date()}`);
+    fs.writeFile('./worktimes.json', JSON.stringify(workTimes), err => {
+      if (err) {
+        console.error(err);
+      }
+    });
+  } else if (oldState.selfMute !== newState.selfMute || oldState.selfDeaf !== newState.selfDeaf) {
+    // User was muted/deafened or unmuted/undeafened
+    console.log(`${user.displayName} was ${status} by the server or ${status} themselves`);
   }
 });
 
 // At midnight, log the work times for each user and reset their daily totals
 setInterval(() => {
   const now = new Date();
-  if (now.getHours() === 0 && now.getMinutes() === 0) {
-    const channel = client.channels.cache.get("1084644618408300554");
+  if (now.getHours() === 00 && now.getMinutes() === 00) {
+    const channel = client.channels.cache.get("1084956858902650900");
     let message = `Work times for ${now.toDateString()}:\n`;
     for (const userId in workTimes) {
       const user = client.users.cache.get(userId);
@@ -90,19 +118,24 @@ client.on("messageCreate", (message) => {
     let replyMessage = "Today's work times:\n";
     for (const userId in workTimes) {
       const user = client.users.cache.get(userId);
-      replyMessage += `${user.username}: ${formatDuration(
-        workTimes[userId].today
-      )}\n`;
+      if (user) {
+        replyMessage += `${user.username}: ${formatDuration(
+          workTimes[userId].today
+        )}\n`;
+      }
     }
     message.reply(replyMessage);
   } else if (message.content === "/timeslist") {
     let replyMessage = "Total work times:\n";
     for (const userId in workTimes) {
       const user = client.users.cache.get(userId);
-      replyMessage += `${user.username}: ${formatDuration(
-        workTimes[userId].total
-      )}\n`;
+      if (user) {
+        replyMessage += `${user.username}: ${formatDuration(
+          workTimes[userId].total
+        )}\n`;
+      }
     }
     message.reply(replyMessage);
   }
 });
+
